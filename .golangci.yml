@@ -1,0 +1,238 @@
+# golangci-lint configuration for go-await project
+# Run with: golangci-lint run
+
+run:
+  # Timeout for analysis
+  timeout: 5m
+
+  # Exit code when at least one issue was found
+  issues-exit-code: 1
+
+  # Include test files
+  tests: true
+
+  # List of build tags to consider
+  build-tags:
+    - integration
+
+
+
+output:
+  # Format of the output
+  formats:
+    - format: colored-line-number
+
+  # Print lines of code with issue
+  print-issued-lines: true
+
+  # Print linter name in the end of issue text
+  print-linter-name: true
+
+  # Make output unique by line
+  uniq-by-line: true
+
+  # Sort results by: filepath, line and column
+  sort-results: true
+
+linters:
+  # Enable specific linters
+  enable:
+    # Code correctness
+    - errcheck      # Check for unchecked errors
+    - govet         # Go vet examines Go source code
+    - staticcheck   # Staticcheck is go vet on steroids
+    - typecheck     # Parse and type-check Go code
+
+    # Code style
+    - gofmt         # Check whether code was gofmt-ed
+    - goimports     # Check import statements are formatted
+    - whitespace    # Detection of leading and trailing whitespace
+    - misspell      # Find commonly misspelled English words
+
+    # Code complexity
+    - gocyclo       # Computes cyclomatic complexity
+    - funlen        # Detect long functions
+    - gocognit      # Computes cognitive complexity
+    - nestif        # Reports deeply nested if statements
+
+    # Security
+    - gosec         # Security checks
+
+    # Performance
+    - prealloc      # Find slice declarations that could be preallocated
+    - ineffassign   # Detects ineffectual assignments
+
+    # Best practices
+    - unconvert     # Remove unnecessary type conversions
+    - unparam       # Find unused function parameters
+    - unused        # Check for unused constants, variables, functions and types
+    - nakedret      # Find naked returns in large functions
+    - noctx         # Find sending http request without context.Context
+
+  # Disable specific linters
+  disable:
+    - godot         # Check if comments end in a period
+    - godox         # Tool for detection of FIXME, TODO comments
+    - dupl          # Tool for code clone detection
+    - lll           # Reports long lines
+    - gochecknoinits # Checks that no init functions are present
+    - gochecknoglobals # Check that no global variables exist
+    - wsl           # Whitespace linter
+    - nlreturn      # Checks for a new line before return statements
+    - testpackage   # Makes you use a separate _test package
+    - wrapcheck     # Checks that errors from external packages are wrapped
+    - varnamelen    # Checks that the length of a variable's name matches its scope
+    - errorlint     # Error wrapping checks
+    - ireturn       # Accept interfaces, return concrete types
+    - exhaustive    # Check exhaustiveness of enum switch statements
+    - forcetypeassert # Finds forced type assertions
+    - err113        # Go 1.13 error checks
+
+linters-settings:
+  # errcheck settings
+  errcheck:
+    # Report about not checking errors in type assertions
+    check-type-assertions: true
+    # Report about assignment of errors to blank identifier
+    check-blank: true
+    # Exclude certain functions for checking
+    exclude-functions:
+      - (io.Closer).Close
+      - (io.ReadCloser).Close
+
+  # govet settings
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment # Too strict for general use
+
+  # gofmt settings
+  gofmt:
+    # Simplify code
+    simplify: true
+
+  # goimports settings
+  goimports:
+    # Local prefixes to put after 3rd-party packages
+    local-prefixes: github.com/sachinagada/go-await
+
+  # gocyclo settings
+  gocyclo:
+    # Minimal complexity threshold
+    min-complexity: 15
+
+  # funlen settings
+  funlen:
+    # Maximum function length in lines
+    lines: 100
+    # Maximum function length in statements
+    statements: 50
+
+  # misspell settings
+  misspell:
+    # Locale to use
+    locale: US
+    # Ignore certain words
+    ignore-words:
+      - cancelled # British spelling
+
+  # nakedret settings
+  nakedret:
+    # Max length of function to check for naked returns
+    max-func-lines: 30
+
+  # prealloc settings
+  prealloc:
+    # Report preallocation suggestions only on simple loops
+    simple: true
+    # Report preallocation suggestions on range loops
+    range-loops: true
+    # Report preallocation suggestions on for loops
+    for-loops: true
+
+  # nolintlint settings
+  nolintlint:
+    # Require specific reason for nolint directives
+    require-explanation: true
+    # Require nolint directives to mention specific linter
+    require-specific: true
+    # Allow leading space for nolint
+    allow-leading-space: false
+
+  # gosec settings
+  gosec:
+    # Which checks to run
+    includes:
+      - G101 # Look for hardcoded credentials
+      - G102 # Bind to all interfaces
+      - G103 # Audit the use of unsafe block
+      - G104 # Audit errors not checked
+      - G106 # Audit the use of ssh.InsecureIgnoreHostKey
+      - G107 # Url provided to HTTP request as taint input
+      - G201 # SQL query construction using format string
+      - G202 # SQL query construction using string concatenation
+      - G203 # Use of unescaped data in HTML templates
+      - G204 # Audit use of command execution
+      - G301 # Poor file permissions used when creating a directory
+      - G302 # Poor file permissions used when creating a file
+      - G303 # Creating tempfile using a predictable path
+      - G304 # File path provided as taint input
+      - G305 # File traversal when extracting zip archive
+      - G401 # Detect the usage of weak cryptographic algorithms
+      - G402 # Look for bad TLS connection settings
+      - G403 # Ensure minimum RSA key length
+      - G404 # Insecure random number source
+      - G501 # Import blocklist: crypto/md5
+      - G502 # Import blocklist: crypto/des
+      - G503 # Import blocklist: crypto/rc4
+      - G504 # Import blocklist: net/http/cgi
+      - G505 # Import blocklist: crypto/sha1
+
+  # unused settings
+  unused:
+    # Check for unused exported fields and methods
+    check-exported: false
+
+issues:
+  # Maximum issues count per one linter
+  max-issues-per-linter: 0
+
+  # Maximum count of issues with the same text
+  max-same-issues: 0
+
+  # Fix found issues (if it's supported by the linter)
+  fix: false
+
+  # Exclude directories
+  exclude-dirs:
+    - vendor
+    - testdata
+    - examples
+    - example
+
+  # Excluding configuration per-path, per-linter, per-text and per-source
+  exclude-rules:
+    # Exclude some linters from running on tests files
+    - path: _test\.go
+      linters:
+        - funlen      # Test functions can be longer
+        - gocognit    # Test functions can be more complex
+        - gocyclo     # Test functions can have higher complexity
+        - dupl        # Test often have similar setup
+        - gosec       # Test may use weak random for testing
+        - prealloc    # Test allocations are not performance critical
+
+    # Exclude certain patterns
+    - text: "should have comment or be unexported"
+      linters:
+        - revive
+
+    # Exclude error checks in defer statements
+    - source: "defer"
+      linters:
+        - errcheck
+
+    # Allow fmt.Print* in main packages
+    - path: example/
+      linters:
+        - forbidigo

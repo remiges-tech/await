@@ -1,0 +1,143 @@
+# Pre-commit hooks for Go code quality and security
+# Run 'make pre-commit-install' to set up git hooks
+# Run 'make pre-commit-run' to run all hooks on all files
+
+repos:
+  # Go specific hooks
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt
+        name: go-fmt
+        description: Run gofmt on Go files
+      - id: go-vet
+        name: go-vet
+        description: Run go vet
+        exclude: ^examples/kyc/
+      - id: go-imports
+        name: go-imports
+        description: Run goimports
+        exclude: ^examples/kyc/
+      - id: go-cyclo
+        name: go-cyclo
+        description: Check cyclomatic complexity
+        args: ['-over', '15']
+        exclude: '_test\.go$'
+      - id: no-go-testing
+        name: no-go-testing
+        description: Check for fmt.Println statements
+      - id: golangci-lint
+        name: golangci-lint
+        description: Run golangci-lint
+        exclude: ^examples/kyc/
+      - id: go-mod-tidy
+        name: go-mod-tidy
+        description: Run go mod tidy -v
+        exclude: ^examples/kyc/
+
+  # General formatting and file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        name: trim-trailing-whitespace
+        description: Trim trailing whitespace
+      - id: end-of-file-fixer
+        name: fix-end-of-files
+        description: Fix end of files
+      - id: check-yaml
+        name: check-yaml
+        description: Check YAML syntax
+      - id: check-added-large-files
+        name: check-added-large-files
+        description: Check for large files
+        args: ['--maxkb=500']
+      - id: check-case-conflict
+        name: check-case-conflict
+        description: Check for case conflicts
+      - id: check-merge-conflict
+        name: check-merge-conflict
+        description: Check for merge conflicts
+      - id: mixed-line-ending
+        name: mixed-line-ending
+        description: Check line endings
+        args: ['--fix=lf']
+
+  # Security checks
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        name: detect-secrets
+        description: Detect secrets in code
+        args: ['--baseline', '.secrets.baseline']
+
+  # Local hooks for additional checks
+  - repo: local
+    hooks:
+      # Binary file detection
+      - id: forbid-binary-extensions
+        name: forbid-binary-extensions
+        description: Forbid binary file extensions
+        entry: Binary files are not allowed
+        language: fail
+        files: '\.(exe|dll|so|dylib|a|o|obj|lib|pdb|class|jar|war|ear|zip|tar|gz|7z|rar|pdf|doc|docx|xls|xlsx|ppt|pptx|jpg|jpeg|png|gif|bmp|ico|ttf|otf|woff|woff2|eot|mp3|mp4|avi|mov|wmv|flv|swf)$'
+
+      - id: forbid-go-binaries
+        name: forbid-go-binaries
+        description: Forbid compiled Go binaries
+        entry: |
+          bash -c 'git diff --cached --name-only | while read f; do
+            if [ -f "$f" ] && file "$f" 2>/dev/null | grep -q "ELF\|Mach-O\|PE32"; then
+              echo "Binary file detected: $f"
+              exit 1
+            fi
+          done'
+        language: system
+        pass_filenames: false
+
+      - id: check-extensionless-binaries
+        name: check-extensionless-binaries
+        description: Check for binaries without extensions
+        entry: |
+          bash -c 'git diff --cached --name-only | grep -v "\." | while read f; do
+            if [ -f "$f" ] && ! head -c 1000 "$f" 2>/dev/null | grep -qI . 2>/dev/null; then
+              echo "Possible binary file without extension: $f"
+              echo "Hint: Use \"go build -o cmd.exe\" or \"go build -o cmd.bin\" to add extension"
+              exit 1
+            fi
+          done'
+        language: system
+        pass_filenames: false
+
+      - id: forbid-go-test-binaries
+        name: forbid-go-test-binaries
+        description: Forbid .test files
+        entry: Test binaries are not allowed
+        language: fail
+        files: '\.test$'
+
+      # Build and test hooks
+      - id: go-test
+        name: go-test
+        description: Run unit tests
+        entry: make test
+        language: system
+        types: [go]
+        pass_filenames: false
+
+      - id: go-coverage
+        name: go-coverage
+        description: Check test coverage
+        entry: make coverage-check
+        language: system
+        types: [go]
+        pass_filenames: false
+
+      - id: go-build
+        name: go-build
+        description: Build the project
+        entry: make build
+        language: system
+        types: [go]
+        pass_filenames: false
