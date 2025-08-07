@@ -104,7 +104,11 @@ func fetchData(ctx context.Context) (string, error) {
 
 ```go
 result, err := retry.Do(ctx, fetchData, retry.Options{
-    Strategy:    &retry.ExponentialBackoff{InitialDelay: 100 * time.Millisecond},
+    Strategy: &retry.ExponentialBackoff{
+        InitialDelay: 100 * time.Millisecond,
+        Multiplier:   2,
+        MaxDelay:     30 * time.Second,
+    },
     MaxAttempts: 5,
     OnRetry: func(attempt int, err error) {
         log.Printf("Retry attempt %d after error: %v", attempt, err)

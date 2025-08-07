@@ -1,5 +1,5 @@
 // Package await provides Promise-like async task patterns for Go, bringing JavaScript-style
-// async utilities (All, Any, Race, AllSettled) to Go's concurrency model with type safety
+// async utilities (All, Any, Race) to Go's concurrency model with type safety
 // via generics.
 package await
 
@@ -9,10 +9,10 @@ import (
 )
 
 // Result holds either a value or an error from an async operation.
-// Used by AllSettled to return both successful and failed results.
+// Used by All to return both successful and failed results for each task.
 type Result[T any] struct {
-	Value T     // The successful result value
-	Err   error // The error if the operation failed
+	Value T     // The successful result value (or zero value if failed)
+	Err   error // The error if the operation failed (nil if succeeded)
 }
 
 // Task represents an async operation that returns a value of type T or an error.
@@ -20,18 +20,25 @@ type Result[T any] struct {
 type Task[T any] func(ctx context.Context) (T, error)
 
 // All executes all tasks concurrently and waits for all to complete.
-// Philosophy: "Execute all, succeed together or fail together."
-// Returns all results in order if all succeed, or an AggregateError containing
-// all failures if any task fails. Results array always preserves task order,
-// with zero values in positions where tasks failed.
-// Similar to Promise.all in JavaScript.
-func All[T any](ctx context.Context, tasks ...Task[T]) ([]T, error) {
+// Philosophy: "Execute all tasks and return complete information about each task's outcome."
+// Returns a Result for each task containing both its value and error,
+// preserving the original task order. This allows you to handle mixed
+// success/failure scenarios with complete information about each task.
+// Function-level errors (returned as second parameter) only occur for operational issues
+// like empty task list or context cancellation before execution.
+// Task-level errors are captured in each Result[T].Err field.
+func All[T any](ctx context.Context, tasks ...Task[T]) ([]Result[T], error) {
+	// Validate inputs - function-level errors
 	if len(tasks) == 0 {
-		return []T{}, nil
+		return nil, ErrNoTasks
 	}
 
-	results := make([]T, len(tasks))
-	errs := make([]error, len(tasks))
+	// Check context before starting
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	results := make([]Result[T], len(tasks))
 	var wg sync.WaitGroup
 
 	for i, t := range tasks {
@@ -40,28 +47,16 @@ func All[T any](ctx context.Context, tasks ...Task[T]) ([]T, error) {
 			defer wg.Done()
 			select {
 			case <-ctx.Done():
-				errs[idx] = ctx.Err()
+				results[idx] = Result[T]{Err: ctx.Err()}
 				return
 			default:
-				results[idx], errs[idx] = task(ctx)
+				val, err := task(ctx)
+				results[idx] = Result[T]{Value: val, Err: err}
 			}
 		}(i, t)
 	}
 
 	wg.Wait()
-
-	// Collect errors
-	var errors []error
-	for _, err := range errs {
-		if err != nil {
-			errors = append(errors, err)
-		}
-	}
-
-	if len(errors) > 0 {
-		return results, &AggregateError{Errors: errors}
-	}
-
 	return results, nil
 }
 
@@ -147,38 +142,4 @@ func Race[T any](ctx context.Context, tasks ...Task[T]) (T, error) {
 	res := <-ch
 	cancel() // Cancel remaining
 	return res.val, res.err
-}
-
-// AllSettled executes all tasks concurrently and returns all results,
-// regardless of success or failure. Never returns an error.
-// Philosophy: "Execute all, give me everything."
-// Returns a Result for each task containing both its value and error,
-// preserving the original task order. This allows you to handle mixed
-// success/failure scenarios where you need to know the outcome of each task.
-// Similar to Promise.allSettled in JavaScript.
-func AllSettled[T any](ctx context.Context, tasks ...Task[T]) []Result[T] {
-	if len(tasks) == 0 {
-		return []Result[T]{}
-	}
-
-	results := make([]Result[T], len(tasks))
-	var wg sync.WaitGroup
-
-	for i, t := range tasks {
-		wg.Add(1)
-		go func(idx int, task Task[T]) {
-			defer wg.Done()
-			select {
-			case <-ctx.Done():
-				results[idx] = Result[T]{Err: ctx.Err()}
-				return
-			default:
-				val, err := task(ctx)
-				results[idx] = Result[T]{Value: val, Err: err}
-			}
-		}(i, t)
-	}
-
-	wg.Wait()
-	return results
 }

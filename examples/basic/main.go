@@ -35,9 +35,18 @@ func main() {
 
 	results, err := await.All(ctx, apiTasks...)
 	if err != nil {
-		log.Printf("Error in All: %v", err)
+		log.Printf("Function error in All: %v", err)
 	} else {
-		fmt.Printf("   Results: %v\n", results)
+		// Check for task errors and extract values
+		var values []string
+		for i, result := range results {
+			if result.Err != nil {
+				fmt.Printf("   Task %d error: %v\n", i+1, result.Err)
+			} else {
+				values = append(values, result.Value)
+			}
+		}
+		fmt.Printf("   Successful results: %v\n", values)
 	}
 
 	// Example 2: Any - Return first successful result
@@ -88,8 +97,8 @@ func main() {
 		fmt.Printf("   Winner: Task %d\n", winner)
 	}
 
-	// Example 4: AllSettled - Get all results, regardless of errors
-	fmt.Println("\n4. AllSettled() - Get all results including failures:")
+	// Example 4: All with mixed success/failure - Get all results
+	fmt.Println("\n4. All() with mixed results - Get all results with errors:")
 	mixedTasks := []await.Task[int]{
 		func(ctx context.Context) (int, error) {
 			return 1, nil
@@ -102,12 +111,16 @@ func main() {
 		},
 	}
 
-	settled := await.AllSettled(ctx, mixedTasks...)
-	for i, result := range settled {
-		if result.Err != nil {
-			fmt.Printf("   Task %d: Error - %v\n", i+1, result.Err)
-		} else {
-			fmt.Printf("   Task %d: Success - %d\n", i+1, result.Value)
+	settled, err := await.All(ctx, mixedTasks...)
+	if err != nil {
+		log.Printf("Function error: %v", err)
+	} else {
+		for i, result := range settled {
+			if result.Err != nil {
+				fmt.Printf("   Task %d: Error - %v\n", i+1, result.Err)
+			} else {
+				fmt.Printf("   Task %d: Success - %d\n", i+1, result.Value)
+			}
 		}
 	}
 

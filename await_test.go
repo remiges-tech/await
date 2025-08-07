@@ -23,12 +23,18 @@ func TestAll(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		if len(results) != 2 || results[0] != 1 || results[1] != 2 {
-			t.Fatalf("expected [1, 2], got %v", results)
+		if len(results) != 2 {
+			t.Fatalf("expected 2 results, got %d", len(results))
+		}
+		if results[0].Err != nil || results[0].Value != 1 {
+			t.Fatalf("expected results[0] = {1, nil}, got %v", results[0])
+		}
+		if results[1].Err != nil || results[1].Value != 2 {
+			t.Fatalf("expected results[1] = {2, nil}, got %v", results[1])
 		}
 	})
 
-	t.Run("with error returns partial results", func(t *testing.T) {
+	t.Run("with task errors", func(t *testing.T) {
 		t1 := Task[int](func(ctx context.Context) (int, error) {
 			return 0, errors.New("task failed")
 		})
@@ -37,32 +43,29 @@ func TestAll(t *testing.T) {
 		})
 
 		results, err := All(ctx, t1, t2)
-		if err == nil {
-			t.Fatal("expected error, got nil")
+		if err != nil {
+			t.Fatalf("expected no function error, got %v", err)
 		}
 
-		// Check we got AggregateError
-		aggErr, ok := err.(*AggregateError)
-		if !ok {
-			t.Fatalf("expected AggregateError, got %T", err)
-		}
-		if len(aggErr.Errors) != 1 {
-			t.Fatalf("expected 1 error, got %d", len(aggErr.Errors))
-		}
-
-		// Check partial results were returned
+		// Check results contain task errors
 		if len(results) != 2 {
 			t.Fatalf("expected 2 results, got %d", len(results))
 		}
-		if results[0] != 0 {
-			t.Fatalf("expected results[0] = 0, got %d", results[0])
+		if results[0].Err == nil || results[0].Err.Error() != "task failed" {
+			t.Fatalf("expected results[0].Err = 'task failed', got %v", results[0].Err)
 		}
-		if results[1] != 2 {
-			t.Fatalf("expected results[1] = 2, got %d", results[1])
+		if results[0].Value != 0 {
+			t.Fatalf("expected results[0].Value = 0, got %d", results[0].Value)
+		}
+		if results[1].Err != nil {
+			t.Fatalf("expected results[1].Err = nil, got %v", results[1].Err)
+		}
+		if results[1].Value != 2 {
+			t.Fatalf("expected results[1].Value = 2, got %d", results[1].Value)
 		}
 	})
 
-	t.Run("multiple errors", func(t *testing.T) {
+	t.Run("multiple task errors", func(t *testing.T) {
 		t1 := Task[int](func(ctx context.Context) (int, error) {
 			return 10, errors.New("error 1")
 		})
@@ -74,39 +77,45 @@ func TestAll(t *testing.T) {
 		})
 
 		results, err := All(ctx, t1, t2, t3)
-		if err == nil {
-			t.Fatal("expected error, got nil")
+		if err != nil {
+			t.Fatalf("expected no function error, got %v", err)
 		}
 
-		// Check we got AggregateError with 2 errors
-		aggErr, ok := err.(*AggregateError)
-		if !ok {
-			t.Fatalf("expected AggregateError, got %T", err)
-		}
-		if len(aggErr.Errors) != 2 {
-			t.Fatalf("expected 2 errors, got %d", len(aggErr.Errors))
-		}
-
-		// Check all results were returned
+		// Check all results were returned with their errors
 		if len(results) != 3 {
 			t.Fatalf("expected 3 results, got %d", len(results))
 		}
-		if results[0] != 10 || results[1] != 20 || results[2] != 30 {
-			t.Fatalf("expected [10, 20, 30], got %v", results)
+		if results[0].Err == nil || results[0].Err.Error() != "error 1" {
+			t.Fatalf("expected results[0].Err = 'error 1', got %v", results[0].Err)
+		}
+		if results[0].Value != 10 {
+			t.Fatalf("expected results[0].Value = 10, got %d", results[0].Value)
+		}
+		if results[1].Err == nil || results[1].Err.Error() != "error 2" {
+			t.Fatalf("expected results[1].Err = 'error 2', got %v", results[1].Err)
+		}
+		if results[1].Value != 20 {
+			t.Fatalf("expected results[1].Value = 20, got %d", results[1].Value)
+		}
+		if results[2].Err != nil {
+			t.Fatalf("expected results[2].Err = nil, got %v", results[2].Err)
+		}
+		if results[2].Value != 30 {
+			t.Fatalf("expected results[2].Value = 30, got %d", results[2].Value)
 		}
 	})
 
 	t.Run("empty tasks", func(t *testing.T) {
 		results, err := All[int](ctx)
-		if err != nil {
-			t.Fatalf("expected no error, got %v", err)
+		if err != ErrNoTasks {
+			t.Fatalf("expected ErrNoTasks, got %v", err)
 		}
-		if len(results) != 0 {
-			t.Fatalf("expected empty results, got %v", results)
+		if results != nil {
+			t.Fatalf("expected nil results, got %v", results)
 		}
 	})
 
-	t.Run("context cancellation", func(t *testing.T) {
+	t.Run("context cancellation before execution", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
@@ -116,13 +125,40 @@ func TestAll(t *testing.T) {
 		})
 
 		results, err := All(ctx, t1)
-		if err == nil {
-			t.Fatal("expected context error")
+		if err != context.Canceled {
+			t.Fatalf("expected context.Canceled, got %v", err)
 		}
 
-		// Results should still be returned (with zero value for cancelled task)
+		// Results should be nil for function-level error
+		if results != nil {
+			t.Fatalf("expected nil results, got %v", results)
+		}
+	})
+
+	t.Run("context cancellation during execution", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+		defer cancel()
+
+		t1 := Task[int](func(ctx context.Context) (int, error) {
+			select {
+			case <-ctx.Done():
+				return 0, ctx.Err()
+			case <-time.After(100 * time.Millisecond):
+				return 1, nil
+			}
+		})
+
+		results, err := All(ctx, t1)
+		if err != nil {
+			t.Fatalf("expected no function error, got %v", err)
+		}
+
+		// Task should have context error
 		if len(results) != 1 {
 			t.Fatalf("expected 1 result, got %d", len(results))
+		}
+		if results[0].Err != context.DeadlineExceeded {
+			t.Fatalf("expected context.DeadlineExceeded, got %v", results[0].Err)
 		}
 	})
 }
@@ -212,40 +248,6 @@ func TestRace(t *testing.T) {
 		_, err := Race(ctx, t1, t2)
 		if err == nil || err.Error() != "quick error" {
 			t.Fatalf("expected quick error, got %v", err)
-		}
-	})
-}
-
-func TestAllSettled(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("mixed results", func(t *testing.T) {
-		t1 := Task[int](func(ctx context.Context) (int, error) {
-			return 1, nil
-		})
-		t2 := Task[int](func(ctx context.Context) (int, error) {
-			return 0, errors.New("task 2 failed")
-		})
-		t3 := Task[int](func(ctx context.Context) (int, error) {
-			return 3, nil
-		})
-
-		results := AllSettled(ctx, t1, t2, t3)
-
-		if len(results) != 3 {
-			t.Fatalf("expected 3 results, got %d", len(results))
-		}
-
-		if results[0].Err != nil || results[0].Value != 1 {
-			t.Errorf("expected first result to be 1, got %v", results[0])
-		}
-
-		if results[1].Err == nil {
-			t.Error("expected second result to have error")
-		}
-
-		if results[2].Err != nil || results[2].Value != 3 {
-			t.Errorf("expected third result to be 3, got %v", results[2])
 		}
 	})
 }

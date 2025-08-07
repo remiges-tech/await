@@ -4,8 +4,8 @@ A Promise-like async task patterns library for Go, providing JavaScript-style as
 
 ## Features
 
-- **Core Functions**: `All`, `Any`, `Race`, `AllSettled`
-- **Utilities**: `Retry`
+- **Core Functions**: `All`, `Any`, `Race`
+- **Retry Package**: Configurable retry with multiple strategies
 - **Error Handling**: Aggregate errors, retry errors, context cancellation
 - **Type-Safe**: Full generic support for type safety
 - **Context-Aware**: All operations respect context cancellation
@@ -47,9 +47,17 @@ func main() {
     // Wait for all tasks
     results, err := await.All(ctx, t1, t2)
     if err != nil {
-        log.Fatal(err)
+        log.Fatal(err) // Function-level error (e.g., context cancelled)
     }
-    fmt.Println(results) // [1, 2]
+
+    // Check task results
+    for i, result := range results {
+        if result.Err != nil {
+            fmt.Printf("Task %d failed: %v\n", i, result.Err)
+        } else {
+            fmt.Printf("Task %d result: %d\n", i, result.Value)
+        }
+    }
 }
 ```
 
@@ -58,11 +66,12 @@ func main() {
 ### Core Functions
 
 #### All
-Waits for all tasks to complete. Returns all results (including partial results from successful tasks) and an AggregateError if any task fails.
+Executes all tasks concurrently and returns complete information about each task's outcome. Returns a `Result[T]` for each task containing both value and error.
 
 ```go
 results, err := await.All(ctx, task1, task2, task3)
-// If task2 fails: results = [result1, zero_value, result3], err = AggregateError
+// err is only for function-level errors (e.g., ErrNoTasks, context cancelled)
+// Each result contains {Value: T, Err: error} for that specific task
 ```
 
 #### Any
@@ -79,63 +88,47 @@ Returns the first task to complete (success or failure).
 result, err := await.Race(ctx, task1, task2, task3)
 ```
 
-#### AllSettled
-Returns all results regardless of success/failure.
-
-```go
-results := await.AllSettled(ctx, task1, task2, task3)
-for _, result := range results {
-    if result.Err != nil {
-        // Handle error
-    } else {
-        // Use result.Value
-    }
-}
-```
 
 
 ### Mental Model
 
 Understanding when to use each function:
 
-- **`All`**: "Execute all, succeed together or fail together"
-  - Use when you need all results and any failure should be treated as total failure
-  - Returns partial results on error (with zero values for failed tasks)
-
-- **`AllSettled`**: "Execute all, return all outcomes"
-  - Use when you need to know the outcome of every task, regardless of failures
+- **`All`**: "Execute all, return complete information"
+  - Use when you need to know the outcome of every task
   - Returns `Result[T]` for each task with both value and error
+  - Function-level errors only for operational issues (empty tasks, context cancelled)
 
 - **`Any`**: "Execute all, return first success"
   - Use when you just need one successful result (e.g., trying multiple mirrors)
+  - Cancels remaining tasks on first success
 
 - **`Race`**: "Execute all, return first completion"
   - Use when you want the fastest response, regardless of success/failure
+  - Cancels remaining tasks on first completion
 
 
 ### Function Behavior Comparison
 
 | Function | Philosophy | Returns When | Cancels Others | Error Behavior | Return Value |
 |----------|------------|--------------|----------------|----------------|--------------|
-| `All` | Succeed together or fail together | All tasks complete | No | Returns AggregateError if any fail | `([]T, error)` - Partial results with zero values for failures |
-| `AllSettled` | Return all outcomes | All tasks complete | No | Never returns error | `[]Result[T]` - Each task's value and error paired together |
+| `All` | Execute all, return complete information | All tasks complete | No | Function errors for operational issues only | `([]Result[T], error)` - Each task's value and error paired |
 | `Any` | Return first success | First success OR all fail | Yes (on success) | Only fails if all tasks fail | `(T, error)` - First success or aggregate error |
 | `Race` | Return first completion | First completion | Yes | Returns first result as-is | `(T, error)` - First result (success or failure) |
 
 ### Differences
 
-- **Error Handling**: `All` returns partial results with AggregateError, `AllSettled` never fails, and `Any` only fails if all tasks fail
+- **Error Handling**: `All` separates function errors from task errors, `Any` only fails if all tasks fail
 - **Concurrency**: All functions run tasks concurrently
 - **Cancellation**: Only `Any` and `Race` cancel remaining tasks; `Any` only on success, `Race` on any completion
 - **Use Cases**:
-  - `All`: When you need all results and any failure is critical
-  - `AllSettled`: When you want all results regardless of individual failures
+  - `All`: When you need to know the outcome of every task
   - `Any`: When you need just one successful result (e.g., fallback servers)
   - `Race`: When you want the fastest result, regardless of success/failure
 
-### Understanding All vs AllSettled
+### Understanding the Unified All Function
 
-#### All - Partial Results Behavior
+#### Complete Information for Each Task
 ```go
 // Example: Mixed success and failure
 task1 := func(ctx context.Context) (string, error) { return "success1", nil }
@@ -143,28 +136,35 @@ task2 := func(ctx context.Context) (string, error) { return "", errors.New("fail
 task3 := func(ctx context.Context) (string, error) { return "success3", nil }
 
 results, err := await.All(ctx, task1, task2, task3)
-// results = ["success1", "", "success3"]  // Note: empty string for failed task
-// err = &AggregateError{Errors: [error("failed")]}
+// err = nil (no function-level error)
+// results[0] = Result{Value: "success1", Err: nil}
+// results[1] = Result{Value: "", Err: error("failed")}
+// results[2] = Result{Value: "success3", Err: nil}
 
-// Problem: Can't tell which task failed or if "" is a real value vs failure
-```
-
-#### AllSettled - Complete Information
-```go
-// Same tasks as above
-settled := await.AllSettled(ctx, task1, task2, task3)
-// settled[0] = Result{Value: "success1", Err: nil}
-// settled[1] = Result{Value: "", Err: error("failed")}
-// settled[2] = Result{Value: "success3", Err: nil}
-
-// Now you can handle each result individually
-for i, result := range settled {
+// Handle each result individually with complete information
+for i, result := range results {
     if result.Err != nil {
         log.Printf("Task %d failed: %v", i, result.Err)
     } else {
         log.Printf("Task %d succeeded: %v", i, result.Value)
     }
 }
+```
+
+#### Function-Level vs Task-Level Errors
+```go
+// Function-level error example (operational issue)
+results, err := await.All(ctx) // No tasks provided
+// err = ErrNoTasks
+// results = nil
+
+// Task-level errors (normal operation)
+tasks := []await.Task[int]{
+    func(ctx context.Context) (int, error) { return 0, errors.New("task error") },
+}
+results, err := await.All(ctx, tasks...)
+// err = nil (function executed successfully)
+// results[0].Err = error("task error") (task-specific error)
 ```
 
 ### Utility Functions
@@ -179,13 +179,13 @@ See the [retry package documentation](retry/README.md) for details.
 ## Error Types
 
 - `ErrNoTasks`: Returned when no tasks are provided
-- `ErrMaxRetriesExceeded`: Returned when retry limit is reached
+- `ErrMaxAttemptsInvalid`: Returned when MaxAttempts is <= 0
 - `AggregateError`: Contains multiple errors from failed tasks
 - `RetryError`: Contains retry attempt information
 
 ## Examples
 
-See the [example/main.go](example/main.go) file for usage examples.
+See the [examples/basic/main.go](examples/basic/main.go) file for usage examples.
 
 ## Running Tests
 

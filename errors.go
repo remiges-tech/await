@@ -7,12 +7,12 @@ import (
 )
 
 var (
-	// ErrNoTasks is returned when an empty task slice is provided to Any or Race.
+	// ErrNoTasks is returned when an empty task slice is provided to All, Any, or Race.
 	ErrNoTasks = errors.New("no tasks provided")
 )
 
 // AggregateError contains multiple errors from concurrent operations.
-// Returned by All when any tasks fail, or by Any when all tasks fail.
+// Returned by Any when all tasks fail.
 type AggregateError struct {
 	Errors []error // All errors that occurred during execution
 }

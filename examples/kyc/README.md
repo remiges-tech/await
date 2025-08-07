@@ -73,7 +73,7 @@ export NDML_PASSKEY=your_passkey
 2. Run the example:
 ```bash
 cd examples/kyc
-go run .
+go run ./cmd/kyc-demo
 ```
 
 The example includes:
@@ -93,13 +93,17 @@ result, err := await.Any(ctx, tasks...)
 ### 2. Retry Logic
 Each provider call is wrapped with retry logic:
 ```go
-retryTask := await.Retry(checkKYC, await.RetryConfig{
+import "github.com/remiges-tech/await/retry"
+
+result, err := retry.Do(ctx, checkKYC, retry.Options{
     MaxAttempts: 3,
-    Delay: 2 * time.Second,
-    BackoffMultiplier: 2.0,
+    Strategy: &retry.ConstantDelay{
+        Delay: 2 * time.Second,
+    },
     OnRetry: func(attempt int, err error) {
         log.Printf("Attempt %d failed: %v", attempt, err)
     },
+    RetryIf: IsRetryable, // Custom function to determine if error is retryable
 })
 ```
 
